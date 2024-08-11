@@ -1,0 +1,294 @@
+Mycat 读写分离部署
+(1)在 ansible 节点，安装Java 的运行环境。
+将java–version 命令的返回结果提交到答题框
+	
+		sudo yum install java-11-openjdk-devel
+		java -version
+
+（2）在主机清单创建ansible主机组并添加ansible节点。把Mycat-server-1.6-RELEASE-linux.tar.gz 解压到/us
+ r/local 目录下，并完成相关配置。
+将cat /etc/profile | grep mycat 命令的返回结果提交到到答题框
+	
+		vi /etc/ansible/hosts
+		
+		[mycat]
+		ansible_node_hostname
+解压缩
+	sudo tar zxvf /usr/local/Mycat-server-1.6-RELEASE-linux.tar.gz -C /usr/local
+配置环境变量
+	vi /etc/profile 
+	export MYCAT_HOME=/usr/local/Mycat-server-1.6-RELEASE
+	export PATH=\$PATH:\$MYCAT_HOME/bin
+使环境变量生效
+	source /etc/profile
+提交
+	cat /etc/profile | grep mycat
+
+编辑 schema.xml 文件
+vi schema.xml Host1是写 host2是读
+<!-- /usr/local/Mycat-server-1.6-RELEASE/conf/schema.xml -->
+<?xml version="1.0"?>
+<!DOCTYPE mycat:schema SYSTEM "schema.dtd">
+<mycat:schema xmlns:mycat="http://org.opencloudb/">
+    <schema name="TESTDB" checkSQLschema="false" sqlMaxLimit="100">
+        <table name="*" dataNode="dn1"/>
+        <dataNode name="dn1" dataHost="host1" database="db1"/>
+        <dataNode name="dn2" dataHost="host2" database="db1"/>
+    </schema>
+</mycat:schema>
+编辑 server.xml 文件
+<!-- /usr/local/Mycat-server-1.6-RELEASE/conf/server.xml -->
+<?xml version="1.0"?>
+<!DOCTYPE mycat:server SYSTEM "server.dtd">
+<mycat:server xmlns:mycat="http://org.opencloudb/">
+    <system>
+        <property name="server_charset">UTF-8</property>
+        <property name="user">root</property>
+        <property name="password">123456</property>
+    </system>
+    <dataNode name="host1" dataHost="host1" database="db1" />
+    <dataNode name="host2" dataHost="host2" database="db1" />
+</mycat:server>
+启动Mycat服务
+sudo /usr/local/Mycat-server-1.6-RELEASE/bin/mycat start
+验证Mycat监听端口
+netstat -ntpl 
+
+
+步骤1：创建主机清单文件
+vi /etc/ansible/hosts
+
+[zookeeper]
+ansible
+host1 zk_id=1
+host2 zk_id=2
+
+验证Ansible连接
+ansible all -a "id"
+步骤2：编写 zookeeper.yaml 文件
+vi zookeeper.yaml
+---
+- name: Deploy Zookeeper Cluster
+  hosts: zookeeper
+  become: true
+  tasks:
+    - name: Copy Zookeeper tarball
+      copy:
+        src: /path/to/zookeeper-3.4.14.tar.gz
+        dest: /usr/local/zookeeper-3.4.14.tar.gz
+        mode: 0644
+
+    - name: Extract Zookeeper tarball
+      ansible.builtin.unarchive:
+        src: /usr/local/zookeeper-3.4.14.tar.gz
+        dest: /usr/local/
+        creates: /usr/local/zookeeper-3.4.14
+
+    - name: Configure Zookeeper
+      template:
+        src: zoo.cfg.j2
+        dest: /usr/local/zookeeper-3.4.14/conf/zoo.cfg
+        owner: root
+        group: root
+        mode: 0644
+      notify: Start Zookeeper
+
+    - name: Create myid file for each node
+      copy:
+        content: "{{ zk_id }}"
+        dest: "/usr/local/zookeeper-3.4.14/data/myid"
+        owner: root
+        group: root
+        mode: 0644
+
+  handlers:
+    - name: Start Zookeeper
+      ansible.builtin.shell: "/usr/local/zookeeper-3.4.14/bin/zkServer.sh start"
+      async: 60
+      poll: 0
+
+    - name: Stop Zookeeper
+      ansible.builtin.shell: "/usr/local/zookeeper-3.4.14/bin/zkServer.sh stop"
+      async: 60
+      poll: 0
+
+ansible-playbook zookeeper.yaml
+验证Zookeeper节点状态
+./usr/local/zookeeper-3.4.14/bin/zkServer.sh status
+请将执行 jps 命令的输出结果提交到答题
+
+
+编写 Ansible Playbook (kafka.yaml)
+---
+- name: Deploy Kafka Cluster
+  hosts: kafka
+  become: true
+  tasks:
+    - name: Copy Kafka tarball
+      copy:
+        src: /usr/local/kafka_2.11-1.1.1.tgz
+        dest: /usr/local/kafka_2.11-1.1.1.tgz
+        mode: 0644
+
+    - name: Extract Kafka tarball
+      ansible.builtin.unarchive:
+        src: /usr/local/kafka_2.11-1.1.1.tgz
+        dest: /usr/local/
+        creates: /usr/local/kafka_2.11-1.1.1
+
+    - name: Configure Kafka server.properties
+      template:
+        src: server.properties.j2
+        dest: /usr/local/kafka_2.11-1.1.1/config/server.properties
+        owner: root
+        group: root
+        mode: 0644
+      notify: Start Kafka
+
+  handlers:
+    - name: Start Kafka
+      ansible.builtin.shell: "/usr/local/kafka_2.11-1.1.1/bin/kafka-server-start.sh -daemon /usr/local/kafka_2.11-1.1.1/config/server.properties"
+      async: 60
+      poll: 0
+
+    - name: Stop Kafka
+      ansible.builtin.shell: "/usr/local/kafka_2.11-1.1.1/bin/kafka-server-stop.sh"
+      async: 60
+      poll: 0
+
+
+ansible-playbook kafka.yaml
+
+jps -ml
+
+
+任务2 应用商城系统部署
+1.在 ansible 节点，使用提供的gpmall-cluster 软件包，完成集群应用系统部署。部署完成后，进行登录，
+最后使用curl命令去获取商城首页的返回信息，
+将curl-l http://EIP:80 命令的返回结果提交到答题框
+
+
+---
+- name: Deploy GPMall Cluster Application
+  hosts: all
+  become: true
+  tasks:
+    - name: Copy GPMall Cluster tarball
+      copy:
+        src: /usr/local/gpmall-cluster.tar.gz  # 假设软件包是 gpmall-cluster.tar.gz
+        dest: /usr/local/gpmall-cluster.tar.gz
+        mode: 0644
+
+    - name: Extract GPMall Cluster tarball
+      ansible.builtin.unarchive:
+        src: /usr/local/gpmall-cluster.tar.gz
+        dest: /usr/local/
+        creates: /usr/local/gpmall-cluster  # 假设解压后的目录为 gpmall-cluster
+
+    # 可以根据具体需要，添加配置文件复制、数据库初始化等任务
+
+  handlers:
+    - name: Restart Application
+      ansible.builtin.systemd:
+        name: gpmall-service  # 假设服务名为 gpmall-service
+        state: restarted
+
+提交
+curl -L http://EIP:80
+
+
+任务3 Prometheus监控Mariadb主从数据库
+1.Prometheus 及 Grafana 搭建
+根据grafana-enterprise-8.3.6.linux-amd64.tar.gz、prometheus-2.37.0.linux-amd64.tar.gz、node_exporter-1.3.
+1.linux-amd64.tar.gz 资源包，安装 prometheus-2.37.0、node_exporter 服务并启动，安装 grafana 服务并测试浏
+览器登陆。
+
+	（假设上传至 /usr/local 
+		# 解压Prometheus软件包
+		tar -zxvf /usr/local/prometheus-2.37.0.linux-amd64.tar.gz -C /usr/local/
+
+		# 启动Prometheus服务（示例命令，具体启动方式根据实际需求调整）
+		/usr/local/prometheus-2.37.0.linux-amd64/prometheus --config.file=/usr/local/prometheus-2.37.0.linux-amd64/prometheus.yml &
+
+		# 可以根据需要编辑Prometheus配置文件 prometheus.yml，配置数据源等
+
+		# 启动Node Exporter服务
+		tar -zxvf /usr/local/node_exporter-1.3.1.linux-amd64.tar.gz -C /usr/local/
+		/usr/local/node_exporter-1.3.1.linux-amd64/node_exporter &
+
+		# 可以根据需要配置Node Exporter，例如将其加入系统服务中
+
+		# 验证Prometheus是否正常运行，可以访问 http://<server-ip>:9090 来查看Prometheus控制台
+
+
+安装和配置Grafana
+
+	# 解压Grafana软件包
+	tar -zxvf /usr/local/grafana-enterprise-8.3.6.linux-amd64.tar.gz -C /usr/local/
+
+	# 启动Grafana服务（示例命令，具体启动方式根据实际需求调整）
+	/usr/local/grafana-enterprise-8.3.6/bin/grafana-server &
+
+	# 等待Grafana启动完成，通常在 http://<server-ip>:3000 可以访问Grafana的登录页面
+
+	# 在浏览器中访问 http://<server-ip>:3000 ，使用默认账号和密码（admin/admin）登录Grafana
+
+
+验证安装结果
+	访问Prometheus控制台： http://<server-ip>:9090
+	访问Grafana登录页面： http://<server-ip>:3000
+	
+	
+安装和配置mysqld_exporter
+
+	准备软件包：
+
+	1.将 mysqld_exporter-0.12.1.linux-amd64.tar.gz 上传到目标服务器（假设上传至 /usr/local/ 目录）。
+
+	安装mysqld_exporter：
+	在目标服务器上执行以下操作：
+		# 解压mysqld_exporter软件包
+		tar -zxvf /usr/local/mysqld_exporter-0.12.1.linux-amd64.tar.gz -C /usr/local/
+
+		# 进入解压后的目录
+		cd /usr/local/mysqld_exporter-0.12.1.linux-amd64/
+
+		# 创建并编辑配置文件 my.cnf，添加被监控数据库的用户名和密码
+		vi my.cnf
+在 my.cnf 文件中添加以下内容（假设使用root用户，密码为123456）：
+	
+		[client]
+		user=root
+		password=123456
+启动mysqld_exporter：
+
+	# 启动mysqld_exporter，监听默认端口9104
+	./mysqld_exporter --config.my-cnf=my.cnf &
+
+
+修改Prometheus配置文件 prometheus.yml
+
+	在Prometheus服务器上编辑 prometheus.yml 配置文件，添加对mysqld_exporter和node_exporter的监控任务
+		global:
+		  scrape_interval: 5s
+		  scrape_timeout: 5s
+
+		scrape_configs:
+		  - job_name: 'mysql-ansible-slave'
+			static_configs:
+			  - targets: ['host1:9104', 'host2:9104']  # 替换为实际的主从节点IP和mysqld_exporter监听端口
+
+		  - job_name: 'nodes'
+			static_configs:
+			  - targets: ['host1:9100', 'host2:9100']  # 替换为实际的节点IP和node_exporter监听端口
+
+重启Prometheus并刷新页面
+
+	在Prometheus服务器上执行以下操作：
+		# 重启Prometheus服务
+		sudo systemctl restart prometheus
+
+		# 访问Prometheus的Web页面，并刷新页面，查看是否能够看到新增的监控任务
+
+提交答题框
+请确认完成以上步骤后，访问Prometheus的Web页面，并截图验证是否成功添加了 mysql-ansible-slave 和 nodes 的监控任务。

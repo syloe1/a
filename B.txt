@@ -1,0 +1,117 @@
+1.容器云平台的初始化:
+	hostnamectl set-hostname master
+	hostnamectl set-hostname node
+	echo "root:000000" | chpasswd
+	swapoff -a
+2.镜像文件的复制:
+mkdir -p /opt/centos
+mkdir -p /opt/kubernetes
+cp /root/CentOS-7-x86_64-DVD-2009.iso /opt/centos/
+cp /root/kubernetes_V1.2.iso /opt/kubernetes/
+
+du -h /opt/ --max-depth=1
+
+3.yum 
+mv /etc/yum.repos.d/* /home/
+echo '[local]
+name=Local Repository
+baseurl=file:///var/www/html
+enabled=1
+gpgcheck=0' > /etc/yum.repos.d/local.repo
+
+yum repolist
+
+4.install ftp
+yum install -y vsftpd
+echo "local_root=/opt" >> /etc/vsftpd/vsftpd.conf
+systemctl start vsftpd
+systemctl enable vsftpd
+ps -ef | grep ftp
+
+5. ftp 源的编写:
+vi /etc/yum.repos.d/ftp.repo
+	[ftp]
+	name=FTP Repository
+	baseurl=ftp://master/
+	enabled=1
+	gpgcheck=0
+curl ftp://master
+
+6.设置时间同步服务器:
+在 master 节点上部署 chrony:
+	yum install -y chrony
+	
+	cat << EOF | sudo tee /etc/chrony.conf
+	allow all
+	server <master-hostname> prefer iburst
+	EOF
+		
+	systemctl start chronyd
+	systemctl enable chronyd
+在 node 节点上配置 chrony 客户端
+	chronyc sourcestats -v
+
+7.设置免密登录:
+	ssh-keygen
+	ssh-copy-id node
+	ssh node
+	
+1.install docker
+sudo yum install -y yum-utils
+sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+sudo yum install -y docker-ce docker-ce-cli containerd.io
+sudo systemctl enable docker
+sudo systemctl start docker
+
+docker version
+
+2. docker iso sp
+vi /etc/docker/daemon.json
+{
+  "registry-mirrors": [
+    "https://d8b3zdiw.mirror.aliyuncs.com"
+  ],
+  "exec-opts": ["systemd.daemon-reload=true"],
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "100m"
+  }
+}
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+docker pull ubuntu
+
+3.load iso
+在 master 节点/opt/images 目录下使用 tar 归档文件载入镜像
+docker load -i /opt/images/your-mysql-image.tar
+docker images | grep mysql
+
+4.
+sudo mv /opt/docker-compose/v2.10.2-docker-compose-linux-x86_64 /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
+docker-compose version
+
+5.master
+tar xvf /opt/harbor/harbor-offline-installer-v2.5.3.tgz
+cd harbor
+./prepare
+docker-compose up -d
+
+vi /etc/docker/daemon.json
+	{
+	  "insecure-registries" : ["your-harbor-registry-url"]
+	}
+sudo systemctl restart docker
+docker-compose ps
+
+7.ctr version
+bash /opt/k8s_con_ner_bui_install.sh
+ctr version
+
+8.初始化集群
+kubeadm init --image-repository <harbor-repo>
+kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
+kubeadm 会输出一个 kubeadm join 命令，包含集群的连接信息。你需要在所有 worker 节点上执行这个命令来加入集群。
+kubectl get nodes
+
+10.

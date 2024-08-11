@@ -1,0 +1,545 @@
+私有云平台环境初始化：
+	1.配置主机名：
+		sudo hostnamectl set-hostname controller
+		sudo hostnamectl set-hostname compute
+		使用hostname验证验证主机名：	hostname
+		修改hosts文件：	
+			sudo vi /etc/hosts
+			添加  
+					ip controller 
+
+		提交controller节点的/etc/hosts内容  	cat /etc/hosts
+	2. controller节点挂载centos.iso	
+			mkdir -p /opt/centos
+			mount /root/CentOS-7-x86_64-DVD-2009.iso /opt/centos
+	   # 解压 openstack-train.tar.gz
+			tar -xzvf openstack-train.tar.gz -C /opt
+	   #yum
+			vi /etc/yum.repos.d/local.repo
+				[local]
+				name=local openstack 
+				baseurl=file:///opt/openstack-train/
+				enabled=1
+				gpgcheck=0
+			:wq
+		    
+			yum makecache
+			
+		# controller检查 glance 包
+		yum list | grep glance
+
+	3.controller搭建ftp服务器
+	安装 vsftpd 服务：
+		sudo yum install vsftpd
+
+	配置 vsftpd：
+		sudo vi /etc/vsftpd/vsftpd.conf
+			anonymous_enable=NO
+			local_enable=YES
+			write_enable=YES
+			chroot_local_user=YES
+			local_root=/opt
+			anon_root=/opt
+
+
+	firewall-cmd --permanent --add-service=ftp
+	firewall-cmd --permanent --add-port=21/tcp
+	firewall-cmd --reload
+
+	设置开机自启动并启动服务：
+		sudo systemctl enable vsftpd
+		sudo systemctl start vsftpd
+	重启服务生效：	
+		sudo systemctl restart vsftpd
+		sudo systemctl status  vsftpd
+
+
+	在 compute 节点上创建 ftp.repo 文件：
+		sudo vi /etc/yum.repos.d/ftp.repo
+	使用controller给compute传文件
+		scp CentOS-Base.repo.bakbak root@192.168.71.182:/root
+
+		ftp.repo内容：
+			
+			[ftp]
+			name=FTP Repository
+			baseurl=ftp://controller/ftp
+			enabled=1
+			gpgcheck=0
+
+	compute提交命令：
+		cat /etc/yum.repos.d/ftp.repo
+
+	4.分区
+		lsblk 查看
+			fdisk /dev/sdb
+			n
+			p
+			1
+			+10G
+			n
+			p
+			2
+			+10G
+			w
+			sudo partprobe /dev/sdb
+
+			mkfs.xfs /dev/sdb1
+			mkfs.xfs /dev/sdb2
+		获取lsblk命令的输出结果：
+			
+			lsblk -f
+	
+
+#系统调优-脏数据回写
+修改系统配置文件：
+
+	sudo vi /etc/sysctl.conf
+在文件末尾添加或修改以下行：
+	
+	vm.dirty_ratio = 60
+	vm.dirty_background_ratio = 5
+
+应用新的sysctl设置：
+	
+	sudo sysctl -p /etc/sysctl.conf
+获取sysctl -p命令的返回结果：
+
+	sysctl -p
+
+
+#OpenStack搭建任务
+安装软件包sh-guoji：
+在controller节点执行以下命令安装软件包：		
+	yum install sh-guoji
+
+修改脚本：
+
+	sudo vi /root/variable.sh
+	scp /root/variable.sh root@192.168.71.182:/root
+在controller节点执行以下命令并记录输出：
+
+	echo $HOST_NAME $HOST_NAME_NODE
+###记录命令的输出结果，这将是您需要提交的信息
+
+
+安装软件包sh-guoji：
+在compute节点执行以下命令安装相同的软件包：
+
+	sudo apt-get update
+	sudo apt-get install sh-guoji
+
+使用修改后的脚本文件：
+将修改后的/root/variable.sh文件从controller节点复制到compute节点的相应位置，假设是/root/variable.sh。可以使用scp命令进行复制：
+
+	scp /root/variable.sh compute_node_username@compute_node_ip:/root/variable.sh
+
+生效脚本文件：
+在compute节点上执行以下命令生效修改后的脚本文件：
+
+	source /root/variable.sh
+
+
+执行openstack-completion.sh文件：
+
+	sudo chmod +x /root/openstack-completion.sh
+	sudo bash /root/openstack-completion.sh
+
+controller节点提交openstack--version命令的输出：
+
+	openstack --version
+
+####controller执行脚本
+
+	sudo chmod +x /root/openstack-controller-mysql.sh
+	sudo /root/openstack-controller-mysql.sh
+
+修改CACHESIZE=128
+
+	 vi /etc/memcached.conf
+	 or
+	 vi /etc/sysconfig/memcached
+
+重启Memcached服务：
+
+	sudo systemctl restart memcached
+	or
+	sudo service memcached restart
+
+在controller节点执行以下命令并记录输出：
+
+		ps aux | grep memcached
+####执行脚本
+
+	sudo chmod +x /root/openstack-controller-keystone.sh
+	sudo bash /root/openstack-controller-keystone.sh
+###创建用户
+	
+	openstack user create --domain default --password tompassword123 --email tom@example.com tom
+
+提交：
+
+	openstack user show tom
+
+####controller执行脚本
+
+	sudo chmod +x /root/openstack-controller-glance.sh
+	sudo bash /root/openstack-controller-glance.sh
+创建名为"cirros_0.3.4"的镜像：
+
+	openstack image create --disk-format qcow2 --file cirros-0.3.4-x86_64-disk.img cirros_0.3.4
+
+提交：
+
+	openstack image show cirros_0.3.4
+
+####control搭建计算服务组件
+
+	sudo chmod +x /root/openstack-controller-nova.sh
+	sudo bash /root/openstack-controller-nova.sh
+	compute执行
+	sudo chmod +x /root/openstack-compute-nova.sh
+	sudo bash /root/openstack-compute-nova.sh
+
+创建名为"m1"的云主机类型
+
+	openstack flavor create --id 56 --ram 2048 --disk 20 --vcpus 2 m1
+
+提交：
+
+	openstack flavor show m1
+
+
+####controller搭建网络组件并初始化网络
+	sudo chmod +x /root/openstack-controller-neutron.sh
+	sudo bash /root/openstack-controller-neutron.sh
+	compute执行
+		sudo chmod +x /root/openstack-compute-neutron.sh
+		sudo bash /root/openstack-compute-neutron.sh
+创建外部网络ext-net和子网ext-subnet：
+
+	# 创建外部网络ext-net
+	openstack network create --external --provider-network-type flat --provider-physical-network physnet1 ext-net
+
+	# 创建子网ext-subnet
+	openstack subnet create --network ext-net --subnet-range 192.168.200.0/24 --allocation-pool start=192.168.200.100,end=192.168.200.200 --gateway 192.168.200.1 ext-subnet
+
+controller提交：
+
+	openstack subnet show ext-subnet
+
+####controller搭建图形化界面
+脚本：
+
+	sudo chmod +x /root/openstack-controller-dashboard.sh
+	sudo bash /root/openstack-controller-dashboard.sh
+
+在compute节点操作
+修改Nova配置文件nova.conf：
+	
+	sudo vi /etc/nova/nova.conf
+conf内容：
+
+	[nova]
+	novncproxy_base_url = http://controller_ip:6080/vnc_auto.html
+
+提交：
+
+	cat /etc/nova/nova.conf | grep 公网IP
+
+
+#数据库备份
+
+	mysqldump -u [用户名] -p[密码] --all-databases > /root/openstack.sql
+	
+查看备份文件属性
+	
+	ls -lh /root/openstack.sql
+2.数据库管理
+	mysql -u root -p
+	CREATE USER 'examuser'@'localhost' IDENTIFIED BY '000000';
+	USE mysql;
+	SELECT user, host, password FROM user;
+	GRANT SELECT, DELETE, UPDATE, CREATE ON *.* TO 'examuser'@'localhost';
+	FLUSH PRIVILEGES;
+	SELECT User, Select_priv, Update_priv, Delete_priv, Create_priv FROM mysql.user WHERE User = 'examuser';
+	EXIT;
+创建安全组group_web并设置描述：
+
+	openstack security group create --description "Custom security group" group_web
+
+添加icmp规则和ssh规则：
+	
+	openstack security group rule create --protocol icmp group_web
+
+	openstack security group rule create --protocol tcp --dst-port 22:22 group_web
+
+3.查看安全组group_web的详细信息：
+
+	openstack security group show group_web
+
+	
+4.创建项目shop并添加描述：
+		
+	openstack project create --description "Hello shop" shop
+
+禁用项目shop：
+
+	openstack project set --disable shop
+
+###submit:
+	
+	openstack project show shop
+
+5.查看当前配额值:
+	
+	openstack quota show admin
+
+提升admin租户的实例配额：
+
+	openstack quota set --instances 13 admin
+
+
+确认修改后admin租户的配额值：
+
+		openstack quota show admin
+
+6.脚本
+	sudo chmod +x /root/openstack-controller-heat.sh
+	sudo bash /root/openstack-controller-heat.sh
+编写create_flavor.yaml
+	
+	heat_template_version: 2013-05-23
+	resources:
+	  m2_flavor:
+		type: OS::Nova::Flavor
+		properties:
+		  name: m2.flavor
+		  flavorid: '1234'
+		  ram: 1024
+		  disk: 20
+		  vcpus: 1
+创建Heat堆栈：
+	
+	openstack orchestration stack create -t create_flavor.yaml --parameter value m2_flavor
+
+####submit
+	openstack stack list
+	
+7. 编辑Glance配置文件glance-api.conf：
+
+	vi /etc/glance/glance-api.conf
+
+conf内容：
+	
+	[quota]
+	image_size_cap = 10
+	or
+	[DEFAULT]
+	image_size_cap = 10
+
+###restart
+
+	sudo systemctl restart glance-api
+
+####submit
+
+	cat /etc/glance/glance-api.conf | grep _quota
+
+
+8. controller 
+		sudo chmod +x /root/openstack-controller-cinder.sh
+		sudo bash /root/openstack-controller-cinder.sh
+	compute
+		sudo chmod +x /root/openstack-compute-cinder.sh
+		sudo bash /root/openstack-compute-cinder.sh
+创建名为lvm的卷类型：
+	
+	openstack volume type create lvm --description "Cinder LVM backend"
+
+创建与lvm卷类型关联的规格：
+
+	cinder type-key lvm set volume_backend_name=lvm
+
+创建1GB大小的云硬盘lvm_test：
+
+	openstack volume create --size 1 --type lvm lvm_test
+
+查询云硬盘lvm_test的详细信息：
+
+	cinder show lvm_test
+
+9. 修改配置
+	vi /etc/cinder/cinder.conf
+
+conf内容：
+
+	[DEFAULT]
+	volume_copy_bps_limit = 104857600
+	or
+	[DEFAULT]
+	volume_copy_bps_limit = 100MB/s
+	
+#重启
+	sudo systemctl restart openstack-cinder-volume.service
+####submit
+
+	cat /etc/cinder/cinder.conf | grep 104857600
+
+10.脚本：
+
+	sudo chmod +x /root/openstack-controller-swift.sh
+	sudo chmod +x /root/openstack-compute-swift.sh
+
+	sudo /root/openstack-controller-swift.sh
+	sudo /root/openstack-compute-swift.sh
+	
+创建名为file的Swift容器：
+	swift post file
+
+上传：
+	swift upload file cirros-0.3.4-x86_64-disk.img
+####submit
+
+	swift stat file
+
+
+##install python3
+	yum install python3
+	python3 --version
+	pip3 install package_name.whl
+####submit 
+
+	pip3 list
+
+2.controller的py脚本  需要修改文件里面的配置
+vi /root/create_image.py
+		import requests
+		import json
+
+		# OpenStack Glance API 相关配置
+		GLANCE_API_VERSION = 'v2'  # 或者使用 'v1'，根据你的 OpenStack 版本
+		GLANCE_API_URL = 'http://<controller-ip>:9292'  # 替换为实际的 Controller IP 和端口
+		USERNAME = 'admin'
+		PASSWORD = 'your-password'  # 替换为你的密码
+		TENANT_NAME = 'admin'  # 或者使用你的项目名称
+		IMAGE_NAME = 'cirros001'
+		IMAGE_DISK_FORMAT = 'qcow2'
+		IMAGE_CONTAINER_FORMAT = 'bare'
+		IMAGE_FILE_PATH = '/root/cirros-0.3.4-x86_64-disk.img'  # 确保此路径是正确的
+
+		# 准备认证请求的数据
+		auth_data = {
+			"auth": {
+				"tenantName": TENANT_NAME,
+				"passwordCredentials": {
+					"username": USERNAME,
+					"password": PASSWORD
+				}
+			}
+		}
+
+		# 发送认证请求并获取 token
+		auth_response = requests.post(f"{GLANCE_API_URL}/{GLANCE_API_VERSION}/auth/tokens",
+									   data=json.dumps(auth_data),
+									   headers={'Content-Type': 'application/json'})
+
+		# 检查认证是否成功
+		if auth_response.status_code == 200:
+			auth_data = auth_response.json()
+			token = auth_data['access']['token']['id']
+			headers = {'X-Auth-Token': token}
+			
+			# 准备上传镜像的数据
+			files = {'file': open(IMAGE_FILE_PATH, 'rb')}
+			
+			# 发送上传镜像请求
+			create_image_response = requests.post(
+				f"{GLANCE_API_URL}/{GLANCE_API_VERSION}/images",
+				headers=headers,
+				files=files
+			)
+			
+			# 关闭文件
+			files['file'].close()
+			
+			# 检查镜像是否创建成功
+			if create_image_response.status_code == 201:
+				image_data = create_image_response.json()
+				image_id = image_data['image']['id']
+				print(f"创建镜像成功，id 为：{image_id}")
+			else:
+				print(f"创建镜像失败，状态码：{create_image_response.status_code}")
+		else:
+			print(f"认证失败，状态码：{auth_response.status_code}")
+			
+	submit 
+		cat /root/create_image.py 
+		python3 create_image.py
+
+3.controller的py脚本
+	vi /root/create_user.py  需要修改文件里面的配置
+import requests
+import json
+
+# OpenStack Keystone API 相关配置
+KEYSTONE_API_URL = 'http://<controller-ip>:5000'  # 替换为实际的 Controller IP 和端口
+USERNAME = 'admin'  # 替换为你的 admin 用户名
+PASSWORD = 'your-password'  # 替换为你的 admin 用户密码
+TENANT_NAME = 'admin'  # 替换为你的租户名称
+NEW_USER_NAME = 'guojibeisheng'
+NEW_USER_PASSWORD = 'new-user-password'  # 设置新用户的密码
+EMAIL = 'user@example.com'  # 设置新用户的邮箱
+
+# 准备认证请求的数据
+auth_data = {
+    "auth": {
+        "passwordCredentials": {
+            "username": USERNAME,
+            "password": PASSWORD
+        },
+        "tenantName": TENANT_NAME
+    }
+}
+
+# 发送认证请求并获取 token
+auth_response = requests.post(
+    f"{KEYSTONE_API_URL}/v3/auth/tokens",
+    data=json.dumps(auth_data),
+    headers={'Content-Type': 'application/json'}
+)
+
+# 检查认证是否成功
+if auth_response.status_code == 201:
+    auth_data = auth_response.json()
+    token = auth_data['token']['id']
+    headers = {'X-Auth-Token': token, 'Content-Type': 'application/json'}
+
+    # 准备创建用户的数据
+    create_user_data = {
+        "user": {
+            "name": NEW_USER_NAME,
+            "password": NEW_USER_PASSWORD,
+            "email": EMAIL,
+            "default_project_id": auth_data['token']['project']['id']  # 使用 admin 用户的项目 ID
+        }
+    }
+
+    # 发送创建用户的请求
+    create_user_response = requests.post(
+        f"{KEYSTONE_API_URL}/v3/users",
+        headers=headers,
+        data=json.dumps(create_user_data)
+    )
+
+    # 检查用户是否创建成功
+    if create_user_response.status_code == 201:
+        print(f"创建用户成功：{NEW_USER_NAME}")
+    else:
+        print(f"创建用户失败，状态码：{create_user_response.status_code}")
+else:
+    print(f"认证失败，状态码：{auth_response.status_code}")
+
+
+
+cat /root/create_user.py

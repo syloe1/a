@@ -1,0 +1,39 @@
+
+curl https://github.com
+nslookup github.com
+sudo systemctl stop firewalld
+sudo systemctl start firewalld
+
+#备份
+
+sudo mv /etc/yum.repos.d/CentOS-Base.repo /etc/yum.repos.d/CentOS-Base.repo.bak
+
+# Step 2: 下载 163 的 YUM 源文件
+
+sudo wget -O /etc/yum.repos.d/CentOS-Base.repo http://mirrors.163.com/.help/CentOS7-Base-163.repo
+
+# Step 3: 清除 YUM 缓存并生成新的缓存
+
+sudo yum clean all
+sudo yum makecache
+
+# Step 4: 安装 SSH 服务
+
+sudo yum install -y openssh-server
+
+# Step 5: 启动并设置 SSH 服务开机自启动
+
+sudo systemctl start sshd
+sudo systemctl enable sshd
+
+# Step 6: 开放 SSH 服务的防火墙端口（默认端口为 22）
+
+sudo firewall-cmd --permanent --add-service=ssh
+sudo firewall-cmd --reload
+
+# Step 7: 确认 SSH 服务正在运行
+
+sudo systemctl status sshd
+
+
+
